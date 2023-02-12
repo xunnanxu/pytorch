@@ -6,9 +6,14 @@ import re
 import requests
 import os
 import json
+from dataclasses import dataclass
 
-# These should be sets but ordering is nice
-# Distributed has a number of release note labels we want to map to just one.
+@dataclass
+class CategoryGroup:
+    name: str
+    categories: list
+
+# Distributed has a number of release note labels we don't want to map to one
 distributed_categories = [
     'distributed (c10d)',
     'distributed (composable)',
@@ -32,7 +37,23 @@ frontend_categories = [
     'foreach',
     'dataloader',
     'sparse',
+    'nested tensor',
+    'optimizer'
 ]
+
+pytorch_2_categories = [
+    'dynamo',
+    'inductor',
+]
+
+# These will all get mapped to quantization
+quantization = CategoryGroup(
+    name="quantization",
+    categories=[
+        'quantization',
+        'AO frontend',
+        'AO Pruning', ]
+)
 
 categories = [
     'Uncategorized',
@@ -44,11 +65,12 @@ categories = [
     'visualization',
     'onnx',
     'caffe2',
-    'quantization',
     'amd',
     'rocm',
     'cuda',
+    'cpu',
     'cudnn',
+    'xla',
     'benchmark',
     'profiler',
     'performance_as_product',
@@ -61,15 +83,15 @@ categories = [
     'skip',
     'composability',
     # 2.0 release
-    # 'meta_api',
-    # 'mps',
-    # 'intel',
-    # 'functorch',
-    # 'nested tensor',
-    # 'dynamo',
-    # 'AO Pruning',
-    # 'inductor',
- ] + [f'{category}_frontend' for category in frontend_categories]
+    'mps',
+    'intel',
+    'functorch',
+    'gnn',
+    'distributions',
+    'windows',
+    'serialization',
+ ] + distributed_categories + [f'{category}_frontend' for category in frontend_categories] + pytorch_2_categories + [quantization.name]
+
 
 topics = [
     'bc_breaking',
@@ -181,7 +203,7 @@ def run_query(query):
     if request.status_code == 200:
         return request.json()
     else:
-        raise Exception("Query failed to run by returning code of {}. {}".format(request.status_code, query))
+        raise Exception("Query failed to run by returning code of {}. {}".format(request.status_code, request.json()))
 
 
 def github_data(pr_number):
