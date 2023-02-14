@@ -2255,6 +2255,7 @@ class TestCase(expecttest.TestCase):
 
         If random is True, the column counts of rows are in random
         order. Otherwise, the column counts of rows are defined by the
+
         used sampling method.
 
         Sampling method
