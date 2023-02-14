@@ -91,6 +91,8 @@ class ReadsWrites:
     writes: set
     visited: set
 
+def is_uncond(instruction):
+    return instruction.opname in ("JUMP_FORWARD", "JUMP_BACKWARD", "JUMP_BACKWARD_NO_INTERRUPT", "JUMP_ABSOLUTE")
 
 def livevars_analysis(instructions, instruction):
     indexof = {id(inst): i for i, inst in enumerate(instructions)}
@@ -102,8 +104,10 @@ def livevars_analysis(instructions, instruction):
             return
         state.visited.add(start)
 
-        for i in range(start, len(instructions)):
+        i = start
+        while i < len(instructions):
             inst = instructions[i]
+            i += 1
             if inst.opcode in HASLOCAL or inst.opcode in HASFREE:
                 if "LOAD" in inst.opname or "DELETE" in inst.opname:
                     if inst.argval not in must.writes:
@@ -113,8 +117,11 @@ def livevars_analysis(instructions, instruction):
                 else:
                     raise NotImplementedError(f"unhandled {inst.opname}")
             if inst.opcode in JUMP_OPCODES:
-                walk(may, indexof[id(inst.target)])
-                state = may
+                if is_uncond(inst):
+                    i = indexof[id(inst.target)]
+                else:
+                    walk(may, indexof[id(inst.target)])
+                    state = may
             if inst.opcode in TERMINAL_OPCODES:
                 return
 
