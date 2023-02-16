@@ -73,6 +73,10 @@ class CommitClassifier(nn.Module):
         title_embed = self.out_proj_title(title_embed)
 
         #Encode file input
+        # IF someone wants to make this better:
+        # I think a better feature would be splitting file strings to
+        # top level directories and then using an embedding bag to
+        # encode what files were changed.
         files: list[str] = input_batch.files
         files_input = to_tensor(self.transform(files), padding_value=1).to(device)
         files_features = self.encoder(files_input)
@@ -118,6 +122,9 @@ def get_train_val_data(data_folder: Path, regen_data: bool, train_percentage=0.9
         commit_list_df = pd.read_csv(data_folder / "commitlist.csv")
         test_df = commit_list_df[commit_list_df['category'] == 'Uncategorized']
         all_train_df = commit_list_df[commit_list_df['category'] != 'Uncategorized']
+        # We are going to drop skip from training set since it is so imbalanced
+        print("We are removing skip categories, YOU MIGHT WANT TO CHANGE THIS, BUT THIS IS A MORE HELPFUL CLASSIFIER FOR LABELING.")
+        all_train_df = all_train_df[all_train_df['category'] != 'skip']
         all_train_df = all_train_df.sample(frac=1).reset_index(drop=True)
         split_index = math.floor(train_percentage * len(all_train_df))
         train_df = all_train_df[:split_index]
@@ -228,8 +235,8 @@ def train(save_path: Path, data_folder: Path, regen_data: bool, resample: bool):
     loss = torch.nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.Adam(commit_classifier.parameters(), lr=3e-3)
 
-    num_epochs = 50
-    batch_size = 64
+    num_epochs = 25
+    batch_size = 256
 
     if resample:
         # Lets not use this
