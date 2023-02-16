@@ -13,16 +13,6 @@ class CategoryGroup:
     name: str
     categories: list
 
-# Distributed has a number of release note labels we don't want to map to one
-distributed_categories = [
-    'distributed (c10d)',
-    'distributed (composable)',
-    'distributed (ddp)',
-    'distributed (fsdp)',
-    'distributed (rpc)',
-    'distributed (sharded)',
-]
-
 frontend_categories = [
     'meta',
     'nn',
@@ -55,9 +45,22 @@ quantization = CategoryGroup(
         'AO Pruning', ]
 )
 
+# Distributed has a number of release note labels we want to map to one
+distributed = CategoryGroup(
+    name="distributed",
+    categories=[
+        'distributed',
+        'distributed (c10d)',
+        'distributed (composable)',
+        'distributed (ddp)',
+        'distributed (fsdp)',
+        'distributed (rpc)',
+        'distributed (sharded)',
+    ]
+)
+
 categories = [
     'Uncategorized',
-    'distributed',
     'lazy',
     'hub',
     'mobile',
@@ -90,7 +93,7 @@ categories = [
     'distributions',
     'windows',
     'serialization',
- ] + distributed_categories + [f'{category}_frontend' for category in frontend_categories] + pytorch_2_categories + [quantization.name]
+ ]  + [f'{category}_frontend' for category in frontend_categories] + pytorch_2_categories + [quantization.name] + [distributed.name]
 
 
 topics = [

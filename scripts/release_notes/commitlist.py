@@ -119,6 +119,9 @@ class CommitList:
         if category in common.quantization.categories:
             category = common.quantization.name
             return category
+        if category in common.distributed.categories:
+            category = common.distributed.name
+            return category
         return category
 
     @staticmethod
