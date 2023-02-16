@@ -473,6 +473,18 @@ class TensorAlias:
     alias: torch.Tensor
 
 
+@dataclass
+class InternalState:
+    num_outputs: int
+    num_outputs_aliased_to_inputs: int
+    num_outputs_aliased_to_intermediates: int
+    num_outputs_aliased: int
+    num_mutated_inputs: int
+    num_mutated_data_inputs: int
+    num_mutated_metadata_only_inputs: int
+    fw_metadata: ViewAndMutationMeta
+
+
 def has_same_metadata(t1, t2):
     return (
         t1.size() == t2.size()
@@ -2105,11 +2117,22 @@ def aot_dispatch_autograd(flat_fn, flat_args: List[Any], aot_config: AOTConfig):
         log.debug(f"====== Joint graph {aot_config.aot_id} ======")
         log.debug(fx_g.print_readable(print_output=False))
 
+    internal_state = InternalState(
+        num_outputs = _num_outputs,
+        num_outputs_aliased_to_inputs = _num_outputs_aliased_to_inputs,
+        num_outputs_aliased_to_intermediates = _num_outputs_aliased_to_intermediates,
+        num_outputs_aliased = _num_outputs_aliased,
+        num_mutated_inputs = _num_mutated_inputs,
+        num_mutated_data_inputs = _num_mutated_data_inputs,
+        num_mutated_metadata_only_inputs = _num_mutated_metadata_only_inputs,
+        fw_metadata=_fw_metadata,
+    )
+
     with torch.no_grad():
         with track_graph_compiling(aot_config, "joint"):
             num_inner_fwd_outputs = metadata_.num_mutated_inputs + metadata_.num_outputs + _fw_metadata.num_intermediate_bases
             fw_module, bw_module = aot_config.partition_fn(
-                fx_g, joint_inputs, num_fwd_outputs=num_inner_fwd_outputs
+                fx_g, joint_inputs, num_fwd_outputs=num_inner_fwd_outputs, internal_state=internal_state
             )
             fw_outs = [n for n in fw_module.graph.nodes if n.op == "output"][0].args[0]
             # we only need to bookkeep the symints that are saved for bw, not any symints
@@ -2818,6 +2841,96 @@ def aot_module_simplified(
 
     return forward
 
+
+def aot_module_export(
+    mod: nn.Module,
+    args,
+    decompositions: Optional[Dict] = None,
+) -> torch.fx.GraphModule:
+    from functorch.compile import nop
+
+    joint_gm = None
+    saved_internal_state = None
+
+    def joint_graph_saver(gm, joint_args, *, num_fwd_outputs, internal_state):
+        nonlocal joint_gm
+        nonlocal saved_internal_state
+        joint_gm = gm
+        saved_internal_state = internal_state
+        return default_partition(gm, joint_args, num_fwd_outputs=num_fwd_outputs)
+
+    aot_module_simplified(
+        mod,
+        args,
+        fw_compiler=nop,
+        partition_fn=joint_graph_saver,
+        decompositions=decompositions,
+    )
+
+    assert joint_gm is not None
+
+    joint_gm._parameters = mod._parameters.copy()
+    joint_gm._buffers = mod._buffers.copy()
+
+    def populate_graph_signature(gm):
+        # Joint graph has the following input/output signatures
+        @dataclass
+        class JointGraphSignature:
+            # joint graph inputs
+            num_lifted_parameters: int
+            num_lifted_buffers: int
+            num_user_inputs: int
+            num_gradient_user_outputs: int
+
+            # joint graph outputs
+            num_input_mutations: int
+            num_users_outputs: int
+            num_gradient_parameters: int
+            num_gradient_buffers: int
+            num_gradient_user_inputs: int
+
+        # TODO: enumerate all the constrain here
+        # assert saved_internal_state.num_outputs_aliased_to_inputs == 0
+        assert saved_internal_state.num_outputs_aliased_to_intermediates == 0
+        # assert saved_internal_state.num_outputs_aliased == 0
+        assert saved_internal_state.num_mutated_metadata_only_inputs == 0
+
+        sig = JointGraphSignature(
+            num_lifted_parameters = len(gm._parameters),
+            num_lifted_buffers = len(gm._buffers),
+            num_user_inputs = len(args),
+            num_gradient_user_outputs = saved_internal_state.num_outputs,
+
+            num_input_mutations = saved_internal_state.num_mutated_inputs,
+            num_users_outputs = saved_internal_state.num_outputs,
+            num_gradient_parameters = len(gm._parameters),
+            num_gradient_buffers = len(gm._buffers),
+            num_gradient_user_inputs = len(args),
+        )
+
+        placeholder_nodes = [node for node in gm.graph.nodes if node.op == "placeholder"]
+        assert len(placeholder_nodes) == \
+                    sig.num_lifted_parameters + \
+                    sig.num_lifted_buffers + \
+                    sig.num_user_inputs + \
+                    sig.num_gradient_user_outputs
+
+
+        output_node = next(iter(reversed(gm.graph.nodes)))
+        assert output_node.op == "output" and len(output_node.args) == 1
+        return_args = output_node.args[0]
+        assert len(return_args) == \
+                    sig.num_input_mutations + \
+                    sig.num_users_outputs + \
+                    sig.num_gradient_parameters + \
+                    sig.num_gradient_buffers + \
+                    sig.num_gradient_user_inputs
+
+        gm.meta["signature"] = sig
+
+    populate_graph_signature(joint_gm)
+
+    return joint_gm
 
 compiled_function = aot_function
 compiled_module = aot_module
