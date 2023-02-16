@@ -179,6 +179,9 @@ class triton:
     # use alternate codegen for smaller reductions
     persistent_reductions = True
 
+    # theses are not enforced, but they are checked by asserts in autotune.grid
+    max_block = {"X": 1024, "Y": 1024, "Z": 1024}
+
 
 # create a directory containing lots of debug information
 class trace:
