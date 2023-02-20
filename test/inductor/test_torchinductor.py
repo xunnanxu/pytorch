@@ -6472,6 +6472,15 @@ if HAS_CPU:
             same(fn(x), opt_fn(x))
             assert metrics.generated_cpp_vec_kernel_count == 0
 
+        def test_invalid_index_of_empty_tensor(self):
+            def fn(a):
+                b = a[[0]]
+                return b
+
+            a = torch.tensor([])
+            with self.assertRaises(RuntimeError):
+                torch.compile(fn)(a)
+
 
 if HAS_CUDA and not TEST_WITH_ASAN:
     import triton
